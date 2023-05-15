@@ -28,5 +28,9 @@ exports.modExceptions = {
     fetch_error: { name: "Mod_Fetch_Error", message: "Mod could not be fetched from nexus" },
     files_not_found: { name: "Mod_Files_Fetch_Error", message: "Mod files could not be found" },
     not_found: { name: "Mod_Fetch_Error", message: "Mod could not be found" },
+    game_domain_empty: { name: "Game_Domain_Empty", message: "Game Domain is mandatory" },
+    mod_id_empty: { name: "Mod_ID_Empty", message: "Mod ID is mandatory" },
+    url_empty: { name: "URL_Empty", message: "URL is mandatory" },
+    url_invalid: { name: "URL_Invalid", message: "URL is invalid" },
 };
 //# sourceMappingURL=error_messages.js.map

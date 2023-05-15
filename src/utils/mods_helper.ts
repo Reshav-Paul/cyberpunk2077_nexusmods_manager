@@ -1,4 +1,5 @@
 import axios from "axios";
+import url from "url";
 
 import { ModFileType, ModType } from "./types";
 import Mod from "../models/ModModel";
@@ -52,15 +53,17 @@ async function getMod(id: number, domain: string) {
   return mod;
 }
 
-export let getModIDAndDomainFromURL = function (url: string) {
-  const prefix = 'nexusmods.com';
-  let game_domain_index = url.indexOf(prefix);
-  game_domain_index += (prefix.length + 1);
-
-  let domainAndID = url.substring(game_domain_index, url.length);
-  let [domain, id_str] = domainAndID.split('/mods/');
-  let id = parseInt(id_str);
-  return { domain, id };
+export let getModIDAndDomainFromURL = function (nexusURL: string) {
+  let parsedURL = url.parse(nexusURL);
+  let domain_name = '', mod_id = 0;
+  if (parsedURL.hostname === 'www.nexusmods.com') {
+    let pathComponents = parsedURL.pathname?.split('/').filter(element => element.length > 0);
+    if (pathComponents) {
+      domain_name = pathComponents[0];
+      mod_id = parseInt(pathComponents[2]);
+    }
+  }
+  return { domain_name, mod_id };
 }
 
 let modHelper = {

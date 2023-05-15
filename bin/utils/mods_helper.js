@@ -14,6 +14,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getModIDAndDomainFromURL = void 0;
 const axios_1 = __importDefault(require("axios"));
+const url_1 = __importDefault(require("url"));
 const ModModel_1 = __importDefault(require("../models/ModModel"));
 const error_messages_1 = require("./error_messages");
 const url_provider_1 = require("./url_provider");
@@ -63,14 +64,18 @@ function getMod(id, domain) {
         return mod;
     });
 }
-let getModIDAndDomainFromURL = function (url) {
-    const prefix = 'nexusmods.com';
-    let game_domain_index = url.indexOf(prefix);
-    game_domain_index += (prefix.length + 1);
-    let domainAndID = url.substring(game_domain_index, url.length);
-    let [domain, id_str] = domainAndID.split('/mods/');
-    let id = parseInt(id_str);
-    return { domain, id };
+let getModIDAndDomainFromURL = function (nexusURL) {
+    var _a;
+    let parsedURL = url_1.default.parse(nexusURL);
+    let domain_name = '', mod_id = 0;
+    if (parsedURL.hostname === 'www.nexusmods.com') {
+        let pathComponents = (_a = parsedURL.pathname) === null || _a === void 0 ? void 0 : _a.split('/').filter(element => element.length > 0);
+        if (pathComponents) {
+            domain_name = pathComponents[0];
+            mod_id = parseInt(pathComponents[2]);
+        }
+    }
+    return { domain_name, mod_id };
 };
 exports.getModIDAndDomainFromURL = getModIDAndDomainFromURL;
 let modHelper = {

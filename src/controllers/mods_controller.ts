@@ -7,6 +7,17 @@ import { modExceptions } from '../utils/error_messages';
 import Mod from '../models/ModModel';
 import { ModQueryType, mModType } from '../utils/types';
 import { FilterQuery } from 'mongoose';
+import { body, validationResult } from 'express-validator';
+import { createValidationError } from '../utils/error_response';
+import isURL from 'validator/lib/isURL';
+import { isNexusModURL } from '../utils/custom_validators';
+
+export let modCreationValidation = [
+  body('mod_id', modExceptions.mod_id_empty.message).exists().bail().trim().notEmpty().isNumeric(),
+  body('domain_name', modExceptions.game_domain_empty.message).exists().bail().trim().notEmpty(),
+  body('url', modExceptions.url_empty.message).exists().bail().trim().notEmpty().isURL(),
+  body('url', modExceptions.url_invalid.message).exists().bail().custom(isNexusModURL),
+];
 
 export let mods_file_upload: RequestHandler = async function (req: any, res, next) {
   const data = XLSX.read(req.file.buffer, { type: 'buffer' });
@@ -17,32 +28,68 @@ export let mods_file_upload: RequestHandler = async function (req: any, res, nex
     modURLs = modURLs.concat(sheetData.map((sheetRow: any) => sheetRow[urlColumnHeader]).filter(value => value));
   });
 
-  let modIDandDomains = modURLs.map(modURL => getModIDAndDomainFromURL(modURL));
+  let modIDandDomains = modURLs.filter(url => isURL(url)).map(modURL => getModIDAndDomainFromURL(modURL));
 
   let response = [];
   for (let modIDandDomain of modIDandDomains) {
-    if (!modIDandDomain.domain || isNaN(modIDandDomain.id)) return {};
+    if (!modIDandDomain.domain_name || isNaN(modIDandDomain.mod_id)) return {};
 
     let existingMod: any;
     try {
-      existingMod = await modHelper.getMod(modIDandDomain.id, modIDandDomain.domain);
+      existingMod = await modHelper.getMod(modIDandDomain.mod_id, modIDandDomain.domain_name);
       if (existingMod?._id) {
-        response.push(createModError(modIDandDomain.id, modIDandDomain.domain, modExceptions.duplicate_entry, existingMod.name));
+        response.push(createModError(modIDandDomain.mod_id, modIDandDomain.domain_name, modExceptions.duplicate_entry, existingMod.name));
         continue;
       }
     } catch (error: any) { }
 
     try {
-      let fetchedMod = await modHelper.fetchMod(modIDandDomain.id, modIDandDomain.domain, req.user_api_key);
+      let fetchedMod = await modHelper.fetchMod(modIDandDomain.mod_id, modIDandDomain.domain_name, req.user_api_key);
       fetchedMod.files = await modHelper.fetchModFiles(fetchedMod.mod_id, fetchedMod.domain_name, 'main', req.user_api_key);
       let savedMod = await modHelper.saveMod(fetchedMod);
       response.push(savedMod);
     } catch (error: any) {
-      response.push(createModError(modIDandDomain.id, modIDandDomain.domain, error));
+      response.push(createModError(modIDandDomain.mod_id, modIDandDomain.domain_name, error));
     }
   }
 
   res.json(response);
+}
+
+export let add_mod: RequestHandler = async function (req: any, res, next) {
+  const errors = validationResult(req);
+  let shouldFetchFromURL = false;
+  if (!errors.isEmpty()) {
+    let validationErrors = errors.array();
+    let urlErrors = validationErrors.filter(error => error.param === 'url');
+    let otherErrors = validationErrors.filter(error => error.param !== 'url');
+    validationErrors = [];
+    if (req.body.url) {
+      if (urlErrors.length > 0 && otherErrors.length !== 0) validationErrors = urlErrors;
+      if (urlErrors.length === 0) shouldFetchFromURL = true;
+    } else {
+      if (otherErrors.length > 0) validationErrors = otherErrors;
+    }
+    if (validationErrors.length > 0) {
+      res.status(400).json(createValidationError(validationErrors));
+      return;
+    }
+  } else shouldFetchFromURL = true;
+
+  try {
+    let { mod_id, domain_name } = req.body;
+    if (shouldFetchFromURL) {
+      let modIDandDomainFromURL = getModIDAndDomainFromURL(req.body.url);
+      mod_id = modIDandDomainFromURL.mod_id;
+      domain_name = modIDandDomainFromURL.domain_name;
+    }
+    let fetchedMod = await modHelper.fetchMod(mod_id, domain_name, req.user_api_key);
+    fetchedMod.files = await modHelper.fetchModFiles(fetchedMod.mod_id, fetchedMod.domain_name, 'main', req.user_api_key);
+    let savedMod = await modHelper.saveMod(fetchedMod);
+    res.json(savedMod);
+  } catch (error: any) {
+    res.json(createModError(req.body.mod_id, req.body.domain_name, error));
+  }
 }
 
 export let get_mods: RequestHandler = async function (req: any, res, next) {

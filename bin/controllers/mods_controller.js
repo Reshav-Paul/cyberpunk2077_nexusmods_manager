@@ -35,12 +35,22 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.update_mod_files = exports.get_mod_by_id = exports.get_mods = exports.mods_file_upload = void 0;
+exports.update_mod_files = exports.get_mod_by_id = exports.get_mods = exports.add_mod = exports.mods_file_upload = exports.modCreationValidation = void 0;
 const XLSX = __importStar(require("xlsx"));
 const mods_helper_1 = __importStar(require("../utils/mods_helper"));
 const error_response_1 = require("../utils/error_response");
 const error_messages_1 = require("../utils/error_messages");
 const ModModel_1 = __importDefault(require("../models/ModModel"));
+const express_validator_1 = require("express-validator");
+const error_response_2 = require("../utils/error_response");
+const isURL_1 = __importDefault(require("validator/lib/isURL"));
+const custom_validators_1 = require("../utils/custom_validators");
+exports.modCreationValidation = [
+    (0, express_validator_1.body)('mod_id', error_messages_1.modExceptions.mod_id_empty.message).exists().bail().trim().notEmpty().isNumeric(),
+    (0, express_validator_1.body)('domain_name', error_messages_1.modExceptions.game_domain_empty.message).exists().bail().trim().notEmpty(),
+    (0, express_validator_1.body)('url', error_messages_1.modExceptions.url_empty.message).exists().bail().trim().notEmpty().isURL(),
+    (0, express_validator_1.body)('url', error_messages_1.modExceptions.url_invalid.message).exists().bail().custom(custom_validators_1.isNexusModURL),
+];
 let mods_file_upload = function (req, res, next) {
     return __awaiter(this, void 0, void 0, function* () {
         const data = XLSX.read(req.file.buffer, { type: 'buffer' });
@@ -50,34 +60,78 @@ let mods_file_upload = function (req, res, next) {
             let sheetData = XLSX.utils.sheet_to_json(data.Sheets[sheetName]);
             modURLs = modURLs.concat(sheetData.map((sheetRow) => sheetRow[urlColumnHeader]).filter(value => value));
         });
-        let modIDandDomains = modURLs.map(modURL => (0, mods_helper_1.getModIDAndDomainFromURL)(modURL));
+        let modIDandDomains = modURLs.filter(url => (0, isURL_1.default)(url)).map(modURL => (0, mods_helper_1.getModIDAndDomainFromURL)(modURL));
         let response = [];
         for (let modIDandDomain of modIDandDomains) {
-            if (!modIDandDomain.domain || isNaN(modIDandDomain.id))
+            if (!modIDandDomain.domain_name || isNaN(modIDandDomain.mod_id))
                 return {};
             let existingMod;
             try {
-                existingMod = yield mods_helper_1.default.getMod(modIDandDomain.id, modIDandDomain.domain);
+                existingMod = yield mods_helper_1.default.getMod(modIDandDomain.mod_id, modIDandDomain.domain_name);
                 if (existingMod === null || existingMod === void 0 ? void 0 : existingMod._id) {
-                    response.push((0, error_response_1.createModError)(modIDandDomain.id, modIDandDomain.domain, error_messages_1.modExceptions.duplicate_entry, existingMod.name));
+                    response.push((0, error_response_1.createModError)(modIDandDomain.mod_id, modIDandDomain.domain_name, error_messages_1.modExceptions.duplicate_entry, existingMod.name));
                     continue;
                 }
             }
             catch (error) { }
             try {
-                let fetchedMod = yield mods_helper_1.default.fetchMod(modIDandDomain.id, modIDandDomain.domain, req.user_api_key);
+                let fetchedMod = yield mods_helper_1.default.fetchMod(modIDandDomain.mod_id, modIDandDomain.domain_name, req.user_api_key);
                 fetchedMod.files = yield mods_helper_1.default.fetchModFiles(fetchedMod.mod_id, fetchedMod.domain_name, 'main', req.user_api_key);
                 let savedMod = yield mods_helper_1.default.saveMod(fetchedMod);
                 response.push(savedMod);
             }
             catch (error) {
-                response.push((0, error_response_1.createModError)(modIDandDomain.id, modIDandDomain.domain, error));
+                response.push((0, error_response_1.createModError)(modIDandDomain.mod_id, modIDandDomain.domain_name, error));
             }
         }
         res.json(response);
     });
 };
 exports.mods_file_upload = mods_file_upload;
+let add_mod = function (req, res, next) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const errors = (0, express_validator_1.validationResult)(req);
+        let shouldFetchFromURL = false;
+        if (!errors.isEmpty()) {
+            let validationErrors = errors.array();
+            let urlErrors = validationErrors.filter(error => error.param === 'url');
+            let otherErrors = validationErrors.filter(error => error.param !== 'url');
+            validationErrors = [];
+            if (req.body.url) {
+                if (urlErrors.length > 0 && otherErrors.length !== 0)
+                    validationErrors = urlErrors;
+                if (urlErrors.length === 0)
+                    shouldFetchFromURL = true;
+            }
+            else {
+                if (otherErrors.length > 0)
+                    validationErrors = otherErrors;
+            }
+            if (validationErrors.length > 0) {
+                res.status(400).json((0, error_response_2.createValidationError)(validationErrors));
+                return;
+            }
+        }
+        else
+            shouldFetchFromURL = true;
+        try {
+            let { mod_id, domain_name } = req.body;
+            if (shouldFetchFromURL) {
+                let modIDandDomainFromURL = (0, mods_helper_1.getModIDAndDomainFromURL)(req.body.url);
+                mod_id = modIDandDomainFromURL.mod_id;
+                domain_name = modIDandDomainFromURL.domain_name;
+            }
+            let fetchedMod = yield mods_helper_1.default.fetchMod(mod_id, domain_name, req.user_api_key);
+            fetchedMod.files = yield mods_helper_1.default.fetchModFiles(fetchedMod.mod_id, fetchedMod.domain_name, 'main', req.user_api_key);
+            let savedMod = yield mods_helper_1.default.saveMod(fetchedMod);
+            res.json(savedMod);
+        }
+        catch (error) {
+            res.json((0, error_response_1.createModError)(req.body.mod_id, req.body.domain_name, error));
+        }
+    });
+};
+exports.add_mod = add_mod;
 let get_mods = function (req, res, next) {
     return __awaiter(this, void 0, void 0, function* () {
         let query = {};

@@ -10,6 +10,7 @@ const upload = multer({ storage: multer.memoryStorage() })
 
 // Create
 modsRouter.post('/file_upload', auth_controller.user_auth, getUserAPIKey, upload.single('file'), mods_controller.mods_file_upload);
+modsRouter.post('/', auth_controller.user_auth, getUserAPIKey, ...mods_controller.modCreationValidation, mods_controller.add_mod);
 
 // Read
 modsRouter.get('/:id', auth_controller.user_auth, mods_controller.get_mod_by_id);

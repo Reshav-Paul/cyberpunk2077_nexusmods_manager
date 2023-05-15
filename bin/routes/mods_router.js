@@ -35,6 +35,7 @@ let modsRouter = (0, express_1.Router)();
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
 // Create
 modsRouter.post('/file_upload', auth_controller.user_auth, auth_middleware_1.getUserAPIKey, upload.single('file'), mods_controller.mods_file_upload);
+modsRouter.post('/', auth_controller.user_auth, auth_middleware_1.getUserAPIKey, ...mods_controller.modCreationValidation, mods_controller.add_mod);
 // Read
 modsRouter.get('/:id', auth_controller.user_auth, mods_controller.get_mod_by_id);
 modsRouter.get('/', auth_controller.user_auth, mods_controller.get_mods);
